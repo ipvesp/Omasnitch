@@ -17,7 +17,7 @@ BarWidget {
     property bool pendingInitialized: false
     property string setupState: "checking"
     property string setupError: ""
-    readonly property string expectedVersion: "0.2.2"
+    readonly property string expectedVersion: "0.2.3"
     readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/vesp.omasnitch"
 
     function retrySetup() {
@@ -79,9 +79,10 @@ BarWidget {
             blockedSettingProcess.command = [
                 "sh",
                 "-c",
-                "mkdir -p \"${XDG_CONFIG_HOME:-$HOME/.config}/omasnitch\"; "
+                "set -e; umask 077; install -d -m700 \"${XDG_CONFIG_HOME:-$HOME/.config}/omasnitch\"; "
                 + "FILE=\"${XDG_CONFIG_HOME:-$HOME/.config}/omasnitch/ui.conf\"; "
                 + "touch \"$FILE\"; "
+                + "chmod 600 \"$FILE\"; "
                 + "grep -v '^show_blocked_count=' \"$FILE\" > \"$FILE.tmp\" || true; "
                 + "printf 'show_blocked_count="
                 + (value ? "1" : "0")
@@ -100,9 +101,10 @@ BarWidget {
             recentSettingProcess.command = [
                 "sh",
                 "-c",
-                "mkdir -p \"${XDG_CONFIG_HOME:-$HOME/.config}/omasnitch\"; "
+                "set -e; umask 077; install -d -m700 \"${XDG_CONFIG_HOME:-$HOME/.config}/omasnitch\"; "
                 + "FILE=\"${XDG_CONFIG_HOME:-$HOME/.config}/omasnitch/ui.conf\"; "
                 + "touch \"$FILE\"; "
+                + "chmod 600 \"$FILE\"; "
                 + "grep -v '^show_recent_connections=' \"$FILE\" > \"$FILE.tmp\" || true; "
                 + "printf 'show_recent_connections="
                 + (value ? "1" : "0")
@@ -263,7 +265,9 @@ BarWidget {
         command: [
             "sh",
             "-c",
-            "FILE=\"${XDG_CONFIG_HOME:-$HOME/.config}/omasnitch/ui.conf\"; "
+            "set -e; install -d -m700 \"${XDG_CONFIG_HOME:-$HOME/.config}/omasnitch\"; "
+            + "FILE=\"${XDG_CONFIG_HOME:-$HOME/.config}/omasnitch/ui.conf\"; "
+            + "if [ -f \"$FILE\" ]; then chmod 600 \"$FILE\"; fi; "
             + "BLOCKED=1; "
             + "RECENT=1; "
             + "if [ -f \"$FILE\" ]; then "

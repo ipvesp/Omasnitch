@@ -54,7 +54,7 @@ omarchy plugin add https://github.com/ipvesp/Omasnitch.git --enable
 
 The plugin checks whether the matching OmaSnitch service is running. On a new
 installation it verifies that the cloned checkout is clean and that its HEAD
-matches the `v0.2.2` release tag, then builds the daemon from that checkout
+matches the `v0.2.3` release tag, then builds the daemon from that checkout
 with `cargo --locked`. It does not clone or download another application
 revision. Omarchy's polkit agent will ask for permission to install build
 packages, the daemon binary, and the systemd service. The bar shows setup
@@ -86,6 +86,11 @@ The installer verifies `HEAD` and a clean checkout before building with
 and CLI, starts the systemd service, and copies the QML files from that same
 checkout into Omarchy. `sudo` is used only for system files and the service.
 The dependency script installs Arch build tools and bpf-linker 0.12.0.
+
+The panel's preferences and notes are kept in a private directory under
+`~/.config/omasnitch`. The daemon keeps rules in `/var/lib/omasnitch` with
+owner-only access. Existing files are restricted when the updated panel or
+daemon starts. The install log in `~/.cache/omasnitch` is private as well.
 
 The manual installer verifies the selected commit, builds the daemon, and
 copies the QML plugin from that checkout. It needs a terminal for sudo.

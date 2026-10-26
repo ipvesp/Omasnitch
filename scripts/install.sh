@@ -48,7 +48,10 @@ CARGO_TARGET_DIR="$build_dir" cargo build --locked --release --package omasnitch
 sudo install -Dm755 "$build_dir/release/omasnitchd" /usr/local/bin/omasnitchd
 sudo install -Dm755 "$build_dir/release/omasnitchctl" /usr/local/bin/omasnitchctl
 sudo install -Dm644 systemd/omasnitch.service /etc/systemd/system/omasnitch.service
-sudo install -d -m755 /var/lib/omasnitch
+sudo install -d -m700 /var/lib/omasnitch
+if sudo test -f /var/lib/omasnitch/rules.json; then
+  sudo chmod 600 /var/lib/omasnitch/rules.json
+fi
 sudo systemctl daemon-reload
 sudo systemctl enable omasnitch.service
 sudo systemctl restart omasnitch.service

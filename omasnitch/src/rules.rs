@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fs,
+    os::unix::fs::PermissionsExt,
     path::{
         Path,
         PathBuf,
@@ -114,6 +115,8 @@ impl RuleStore {
             data,
         )?;
 
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))?;
+
         fs::rename(
             tmp,
             path,
@@ -194,6 +197,7 @@ impl RuleStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn migrates_old_rules_and_keeps_profiles_independent() {
@@ -208,5 +212,21 @@ mod tests {
         assert!(matches!(store.rules.get("firefox"), Some(RuleAction::Block)));
         store.switch_profile("Work".to_string()).unwrap();
         assert!(matches!(store.rules.get("firefox"), Some(RuleAction::Allow)));
+    }
+
+    #[test]
+    fn saves_rules_with_owner_only_permissions() {
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let dir = std::env::temp_dir().join(format!("omasnitch-rules-{}-{unique}", std::process::id()));
+        fs::create_dir(&dir).unwrap();
+        let path = dir.join("rules.json");
+        let tmp = dir.join("rules.json.tmp");
+        fs::write(&tmp, b"old temporary data").unwrap();
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o644)).unwrap();
+
+        RuleStore::default().save(&path).unwrap();
+        assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+
+        fs::remove_dir_all(dir).unwrap();
     }
 }

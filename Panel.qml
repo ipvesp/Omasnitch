@@ -74,10 +74,17 @@ Panel {
 
     Process {
         id: ensurePreferencesDir
-        command: ["mkdir", "-p", Quickshell.env("HOME") + "/.config/omasnitch"]
-        onExited: {
-            root.preferencesReadyToLoad = true
-            preferencesFile.reload()
+        command: ["/usr/bin/bash", "-c",
+            "set -e; dir=\"$1\"; install -d -m700 -- \"$dir\"; "
+            + "if [ -f \"$dir/panel.json\" ]; then chmod 600 -- \"$dir/panel.json\"; fi",
+            "omasnitch", Quickshell.env("HOME") + "/.config/omasnitch"]
+        onExited: function(exitCode) {
+            if (exitCode === 0) {
+                root.preferencesReadyToLoad = true
+                preferencesFile.reload()
+            } else {
+                console.log("OmaSnitch could not secure its preferences directory")
+            }
         }
     }
 
@@ -89,6 +96,7 @@ Panel {
         printErrors: false
         onLoaded: root.loadPreferences(text())
         onLoadFailed: root.loadPreferences("")
+        onSaved: Quickshell.execDetached(["chmod", "600", root.preferencesPath])
     }
 
     Timer {

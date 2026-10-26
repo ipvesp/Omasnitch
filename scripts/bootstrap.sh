@@ -26,6 +26,11 @@ if [[ ${1:-} == --check ]]; then
   exit 0
 fi
 
+log_dir="${XDG_CACHE_HOME:-$HOME/.cache}/omasnitch"
+install -d -m700 "$log_dir"
+touch "$log_dir/install.log"
+chmod 600 "$log_dir/install.log"
+
 if command -v omasnitchctl >/dev/null 2>&1 \
   && [[ $(omasnitchctl --version 2>/dev/null || true) == "omasnitchctl $version" ]] \
   && omasnitchctl status >/dev/null 2>&1; then
@@ -33,8 +38,6 @@ if command -v omasnitchctl >/dev/null 2>&1 \
   exit 0
 fi
 
-log_dir="${XDG_CACHE_HOME:-$HOME/.cache}/omasnitch"
-mkdir -p "$log_dir"
 exec >"$log_dir/install.log" 2>&1
 echo "Installing OmaSnitch v$version from $head"
 

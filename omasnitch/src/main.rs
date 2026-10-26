@@ -11,6 +11,7 @@ use std::{
         VecDeque,
     },
     fs::File,
+    os::unix::fs::PermissionsExt,
     mem::size_of,
     path::{
         Path,
@@ -1081,6 +1082,10 @@ async fn main()
     std::fs::create_dir_all(
         "/var/lib/omasnitch",
     )?;
+    std::fs::set_permissions("/var/lib/omasnitch", std::fs::Permissions::from_mode(0o700))?;
+    if Path::new(RULES_PATH).exists() {
+        std::fs::set_permissions(RULES_PATH, std::fs::Permissions::from_mode(0o600))?;
+    }
 
     prepare_socket()?;
 
@@ -1264,6 +1269,7 @@ async fn main()
         UnixListener::bind(
             SOCKET_PATH,
         )?;
+    std::fs::set_permissions(SOCKET_PATH, std::fs::Permissions::from_mode(0o660))?;
 
     println!(
         "OmaSnitch daemon running",
