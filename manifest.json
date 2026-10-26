@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "vesp.omasnitch",
   "name": "OmaSnitch",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "author": "Vesp",
   "license": "MIT",
   "description": "Application-level network firewall and connection monitor for Omarchy.",

@@ -202,8 +202,23 @@ BarWidget {
             "test \"$(omasnitchctl --version 2>/dev/null)\" = \"omasnitchctl "
             + root.expectedVersion + "\" && omasnitchctl status >/dev/null 2>&1"]
         onExited: function(exitCode) {
-            if (exitCode === 0) root.setupState = "ready"
-            else root.retrySetup()
+            if (exitCode === 0) {
+                root.setupError = ""
+                root.setupState = "ready"
+                root.refreshRules()
+            } else if (root.setupState === "checking") {
+                root.retrySetup()
+            }
+        }
+    }
+
+    Timer {
+        interval: 5000
+        repeat: true
+        running: root.setupState === "failed"
+        onTriggered: {
+            if (!serviceCheckProcess.running && !bootstrapProcess.running)
+                serviceCheckProcess.running = true
         }
     }
 
