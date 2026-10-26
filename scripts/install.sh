@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+"$ROOT/scripts/bootstrap.sh" --check
 
 # A release install may pass the full commit reviewed by the marketplace.
 # This script never fetches or changes revisions: build and QML use this checkout.

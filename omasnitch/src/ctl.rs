@@ -24,9 +24,7 @@ const SOCKET_PATH: &str =
     "/run/omasnitch/omasnitch.sock";
 
 #[derive(Parser)]
-#[command(
-    name = "omasnitchctl"
-)]
+#[command(name = "omasnitchctl", version)]
 struct Cli {
     #[command(subcommand)]
     command: Command,

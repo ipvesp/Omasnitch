@@ -15,6 +15,18 @@ BarWidget {
     property int currentUid: -1
     property var previousPending: []
     property bool pendingInitialized: false
+    property string setupState: "checking"
+    property string setupError: ""
+    readonly property string expectedVersion: "0.2.1"
+    readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/vesp.omasnitch"
+
+    function retrySetup() {
+        if (bootstrapProcess.running)
+            return
+        setupError = ""
+        setupState = "installing"
+        bootstrapProcess.running = true
+    }
 
     readonly property bool opened:
         panelLoader.item
@@ -183,6 +195,35 @@ BarWidget {
     }
 
     Process {
+        id: serviceCheckProcess
+        command: ["/usr/bin/bash", "-c",
+            "test \"$(omasnitchctl --version 2>/dev/null)\" = \"omasnitchctl "
+            + root.expectedVersion + "\" && omasnitchctl status >/dev/null 2>&1"]
+        onExited: function(exitCode) {
+            if (exitCode === 0) root.setupState = "ready"
+            else root.retrySetup()
+        }
+    }
+
+    Process {
+        id: bootstrapProcess
+        command: ["/usr/bin/bash", root.pluginDir + "/scripts/bootstrap.sh"]
+        stderr: StdioCollector {
+            onStreamFinished: root.setupError = this.text.trim()
+        }
+        onExited: function(exitCode) {
+            root.setupState = exitCode === 0 ? "ready" : "failed"
+            if (exitCode === 0) {
+                root.refreshRules()
+            } else {
+                Quickshell.execDetached(["notify-send", "-a", "OmaSnitch",
+                    "OmaSnitch setup needs attention",
+                    "Open the panel to retry. Details: ~/.cache/omasnitch/install.log"])
+            }
+        }
+    }
+
+    Process {
         id: uidProcess
         command: ["id", "-u"]
         stdout: StdioCollector {
@@ -284,6 +325,8 @@ BarWidget {
 
         uidProcess.running = true
 
+        serviceCheckProcess.running = true
+
         if (!settingsReadProcess.running)
             settingsReadProcess.running = true
     }
@@ -296,12 +339,15 @@ BarWidget {
         bar: root.bar
 
         text:
-            root.pendingCount > 0 ? "󰒃 " + root.pendingCount + " !" : root.showBlockedCount
+            root.setupState === "installing" ? "󰒃 …" : root.setupState === "failed" ? "󰒃 !"
+            : root.pendingCount > 0 ? "󰒃 " + root.pendingCount + " !" : root.showBlockedCount
             ? "󰒃 " + root.blockedAppCount
             : "󰒃"
 
         tooltipText:
-            root.blockedAppCount === 1
+            root.setupState === "installing" ? "OmaSnitch · installing service"
+            : root.setupState === "failed" ? "OmaSnitch · setup failed; open to retry"
+            : root.blockedAppCount === 1
             ? "OmaSnitch · 1 blocked application"
             : "OmaSnitch · "
               + root.blockedAppCount

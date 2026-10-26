@@ -1095,6 +1095,51 @@ Panel {
                             spacing: 10
 
                             Rectangle {
+                                id: setupBanner
+                                readonly property string setupPhase: root.hostWidget ? root.hostWidget.setupState : "ready"
+                                visible: setupPhase === "installing" || setupPhase === "failed"
+                                width: parent.width
+                                height: visible ? 58 : 0
+                                radius: 10
+                                color: setupPhase === "failed" ? Qt.rgba(0.82, 0.28, 0.28, 0.14) : root.ink(0.06)
+                                Row {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 8
+                                    Column {
+                                        width: parent.width - 82
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 3
+                                        Text {
+                                            text: setupBanner.setupPhase === "failed" ? "Service setup failed" : "Installing network service…"
+                                            color: root.textColor
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                        }
+                                        Text {
+                                            width: parent.width
+                                            text: setupBanner.setupPhase === "failed"
+                                                ? ((root.hostWidget && root.hostWidget.setupError) || "Details: ~/.cache/omasnitch/install.log")
+                                                : "A system permission prompt may appear"
+                                            color: root.ink(0.6)
+                                            font.pixelSize: 10
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+                                    Rectangle {
+                                        visible: setupBanner.setupPhase === "failed"
+                                        width: 74
+                                        height: 28
+                                        radius: 7
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        color: root.textColor
+                                        Text { anchors.centerIn: parent; text: "Retry"; color: root.inverseText; font.pixelSize: 10; font.bold: true }
+                                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: if (root.hostWidget) root.hostWidget.retrySetup() }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
                                 width: parent.width
                                 height: 42
                                 radius: 10
@@ -1212,6 +1257,7 @@ Panel {
                             Rectangle {
                                 width: parent.width
                                 height: catalog.height - 120 - pendingBanner.height - (pendingBanner.visible ? 10 : 0)
+                                    - setupBanner.height - (setupBanner.visible ? 10 : 0)
                                 radius: 11
                                 color: root.ink(0.025)
                                 clip: true

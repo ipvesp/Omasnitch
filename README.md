@@ -46,7 +46,25 @@ This name is not necessarily the domain the application requested. Exact
 domain blocking requires DNS request tracking in addition to the current
 IP-based connection hook and is not implemented.
 
-## Install from the reviewed commit
+## Install
+
+```bash
+omarchy plugin add https://github.com/ipvesp/Omasnitch.git --enable
+```
+
+The plugin checks whether the matching OmaSnitch service is running. On a new
+installation it verifies that the cloned checkout is clean and that its HEAD
+matches the `v0.2.1` release tag, then builds the daemon from that checkout
+with `cargo --locked`. It does not clone or download another application
+revision. Omarchy's polkit agent will ask for permission to install build
+packages, the daemon binary, and the systemd service. The bar shows setup
+progress; if it fails, open the panel to retry and check
+`~/.cache/omasnitch/install.log`.
+
+`omarchy plugin add` itself clones the current default branch. For an exact
+reviewed-commit checkout, use the manual route below.
+
+## Install from the reviewed commit manually
 
 Use the full 40-character commit SHA named in the marketplace review. The
 checkout, native build, systemd service, and QML files must all come from that
@@ -58,6 +76,7 @@ read -r -p "Reviewed commit SHA: " reviewed_commit
 git clone --no-checkout https://github.com/ipvesp/Omasnitch.git
 git -C Omasnitch checkout --detach "$reviewed_commit"
 cd Omasnitch
+./scripts/bootstrap.sh --check
 ./scripts/install-deps.sh
 OMASNITCH_REVIEWED_COMMIT="$reviewed_commit" ./scripts/install.sh
 ```
@@ -68,9 +87,8 @@ and CLI, starts the systemd service, and copies the QML files from that same
 checkout into Omarchy. `sudo` is used only for system files and the service.
 The dependency script installs Arch build tools and bpf-linker 0.12.0.
 
-Omarchy's `plugin add` command clones the current default branch and does not
-install the native daemon. Use the commit-pinned checkout above for the full
-installation.
+The manual installer verifies the selected commit, builds the daemon, and
+copies the QML plugin from that checkout. It needs a terminal for sudo.
 
 ## Validate before submitting
 
@@ -88,10 +106,14 @@ LICENSE.
 ## Remove
 
 ```bash
-./scripts/uninstall.sh
+./scripts/uninstall.sh                         # from a manual checkout
+# or, after `omarchy plugin add`:
+~/.config/omarchy/plugins/vesp.omasnitch/scripts/uninstall.sh
 ```
 
 Removal leaves saved rules in `/var/lib/omasnitch/rules.json` for recovery.
+Run this script before `omarchy plugin remove`; removing only the QML plugin
+does not stop the system service.
 
 ## CLI examples
 
