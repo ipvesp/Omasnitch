@@ -1,0 +1,14 @@
+[package]
+name = "omasnitch-ebpf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "omasnitch-ebpf-program"
+path = "src/main.rs"
+
+[dependencies]
+aya-ebpf = "0.2.1"
+omasnitch-common = { path = "../omasnitch-common" }

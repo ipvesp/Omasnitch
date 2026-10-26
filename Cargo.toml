@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = [
+  "omasnitch",
+  "omasnitch-common",
+  "omasnitch-ebpf",
+]
+
+default-members = [
+  "omasnitch",
+  "omasnitch-common",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2024"
+license = "MIT"
+authors = ["Vesp"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

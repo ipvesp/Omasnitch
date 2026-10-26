@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "vesp.omasnitch",
+  "name": "OmaSnitch",
+  "version": "0.2.0",
+  "author": "Vesp",
+  "license": "MIT",
+  "description": "Application-level network firewall and connection monitor for Omarchy.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "OmaSnitch",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "center"
+  }
+}

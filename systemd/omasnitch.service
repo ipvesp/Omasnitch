@@ -1,0 +1,32 @@
+[Unit]
+Description=OmaSnitch Application Firewall
+After=network-pre.target
+Before=network.target
+
+[Service]
+Type=simple
+
+ExecStart=/usr/local/bin/omasnitchd
+
+Restart=on-failure
+RestartSec=2
+
+Group=wheel
+UMask=0007
+
+AmbientCapabilities=CAP_BPF CAP_NET_ADMIN CAP_PERFMON CAP_SYS_RESOURCE CAP_SYS_PTRACE
+CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN CAP_PERFMON CAP_SYS_RESOURCE CAP_SYS_PTRACE
+
+NoNewPrivileges=false
+
+ProtectHome=false
+ProtectSystem=strict
+
+ReadOnlyPaths=/proc
+ReadWritePaths=/var/lib/omasnitch
+
+RuntimeDirectory=omasnitch
+RuntimeDirectoryMode=0770
+
+[Install]
+WantedBy=multi-user.target

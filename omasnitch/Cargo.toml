@@ -1,0 +1,38 @@
+[package]
+name = "omasnitch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "omasnitchd"
+path = "src/main.rs"
+
+[[bin]]
+name = "omasnitchctl"
+path = "src/ctl.rs"
+
+[dependencies]
+anyhow = "1"
+aya = "0.14.0"
+clap = { version = "4", features = ["derive"] }
+libc = "0.2"
+omasnitch-common = { path = "../omasnitch-common" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = [
+  "macros",
+  "rt-multi-thread",
+  "net",
+  "io-util",
+  "signal",
+  "sync",
+  "time"
+] }
+
+[build-dependencies]
+anyhow = "1"
+aya-build = "0.1"
+cargo_metadata = "0.21"
