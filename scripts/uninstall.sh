@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+plugin_dir="$HOME/.config/omarchy/plugins/vesp.omasnitch"
+if [[ -e "$plugin_dir" || -L "$plugin_dir" ]]; then
+  omarchy plugin remove vesp.omasnitch --yes
+fi
+
 sudo systemctl disable \
   --now \
   omasnitch.service || true
@@ -15,7 +20,3 @@ sudo rm -f \
   /usr/local/bin/omasnitchctl
 
 sudo systemctl daemon-reload
-
-if [[ -e "$HOME/.config/omarchy/plugins/vesp.omasnitch" ]]; then
-  omarchy plugin remove vesp.omasnitch --yes
-fi

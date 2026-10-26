@@ -17,7 +17,7 @@ BarWidget {
     property bool pendingInitialized: false
     property string setupState: "checking"
     property string setupError: ""
-    readonly property string expectedVersion: "0.2.3"
+    readonly property string expectedVersion: "0.2.4"
     readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/vesp.omasnitch"
 
     function retrySetup() {

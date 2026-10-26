@@ -40,6 +40,14 @@ fi
   echo "Refusing to overwrite a non-directory: $plugin_dir" >&2
   exit 1
 }
+if [[ -d "$plugin_dir" && ! -f "$plugin_dir/manifest.json" ]]; then
+  echo "Refusing to replace a plugin directory without a manifest: $plugin_dir" >&2
+  exit 1
+fi
+if [[ -d "$plugin_dir" && ${OMASNITCH_REPLACE_EXISTING:-} != 1 ]]; then
+  echo "Refusing to replace an existing plugin without OMASNITCH_REPLACE_EXISTING=1: $plugin_dir" >&2
+  exit 1
+fi
 
 build_dir="$(mktemp -d "${TMPDIR:-/tmp}/omasnitch-build.XXXXXXXX")"
 trap 'rm -rf -- "$build_dir"' EXIT

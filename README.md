@@ -52,12 +52,25 @@ IP-based connection hook and is not implemented.
 omarchy plugin add https://github.com/ipvesp/Omasnitch.git --enable
 ```
 
+This installs the Omarchy bar widget. Once enabled, it starts a local setup
+process for the native firewall service. Omarchy, Quickshell, Git, Bash, jq,
+Polkit, systemd, and an Arch-compatible `pacman` are required. Setup installs
+`rustup`, `clang`, and `llvm` with pacman if they are missing. It installs the
+stable Rust toolchain, nightly Rust with `rust-src`, and `bpf-linker` 0.12.0;
+Cargo downloads locked Rust dependencies when they are not cached. Building
+requires a Linux kernel with the eBPF and cgroup hooks used by the daemon.
+The panel's copy button uses `wl-copy`, and desktop notifications use
+`notify-send` when available.
+
 The plugin checks whether the matching OmaSnitch service is running. On a new
 installation it verifies that the cloned checkout is clean and that its HEAD
-matches the `v0.2.3` release tag, then builds the daemon from that checkout
+matches the `v0.2.4` release tag, then builds the daemon from that checkout
 with `cargo --locked`. It does not clone or download another application
 revision. Omarchy's polkit agent will ask for permission to install build
-packages, the daemon binary, and the systemd service. The bar shows setup
+packages, the daemon and CLI binaries in `/usr/local/bin`, and the systemd
+service in `/etc/systemd/system`. The service runs as root with BPF and network
+capabilities, stores rules in `/var/lib/omasnitch`, and exposes its local
+control socket to members of `wheel`. The bar shows setup
 progress; if it fails, open the panel to retry and check
 `~/.cache/omasnitch/install.log`.
 
@@ -93,7 +106,9 @@ owner-only access. Existing files are restricted when the updated panel or
 daemon starts. The install log in `~/.cache/omasnitch` is private as well.
 
 The manual installer verifies the selected commit, builds the daemon, and
-copies the QML plugin from that checkout. It needs a terminal for sudo.
+copies the QML plugin from that checkout. It needs a terminal for sudo. It
+refuses to replace an existing plugin directory unless you explicitly set
+`OMASNITCH_REPLACE_EXISTING=1`.
 
 ## Validate before submitting
 
@@ -117,8 +132,8 @@ LICENSE.
 ```
 
 Removal leaves saved rules in `/var/lib/omasnitch/rules.json` for recovery.
-Run this script before `omarchy plugin remove`; removing only the QML plugin
-does not stop the system service.
+Use the uninstall script to remove the widget and service together. Running
+`omarchy plugin remove` alone leaves the system service installed.
 
 ## CLI examples
 
