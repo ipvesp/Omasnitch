@@ -69,14 +69,14 @@ Polkit, systemd, and an Arch-compatible `pacman` are required. Setup installs
 stable Rust toolchain, nightly Rust with `rust-src`, and `bpf-linker` 0.12.0;
 Cargo downloads locked Rust dependencies when they are not cached. Building
 requires a Linux kernel with the eBPF and cgroup hooks used by the daemon.
-Plugin release v0.3.1 keeps the native service at v0.3.0. Updating an already
+Plugin release v0.3.2 keeps the native service at v0.3.0. Updating an already
 running v0.3.0 service only refreshes the panel; it does not rebuild the daemon.
 The panel's copy button uses `wl-copy`, and desktop notifications use
 `notify-send` when available.
 
 The plugin checks whether the matching OmaSnitch service is running. On a new
 installation it verifies that the cloned checkout is clean and that its HEAD
-matches the `v0.3.1` release tag, then builds the daemon from that checkout
+matches the `v0.3.2` release tag, then builds the daemon from that checkout
 with `cargo --locked`. It does not clone or download another application
 revision. Omarchy's polkit agent will ask for permission to install build
 packages, the daemon and CLI binaries in `/usr/local/bin`, and the systemd

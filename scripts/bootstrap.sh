@@ -15,6 +15,14 @@ service_version="$(sed -nE 's/^version = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' Cargo
   echo "Invalid service version" >&2
   exit 1
 }
+if [[ ${1:-} != --check ]] \
+  && command -v omasnitchctl >/dev/null 2>&1 \
+  && [[ $(omasnitchctl --version 2>/dev/null || true) == "omasnitchctl $service_version" ]] \
+  && omasnitchctl status >/dev/null 2>&1; then
+  echo "OmaSnitch service v$service_version is already running"
+  exit 0
+fi
+
 head="$(git rev-parse --verify 'HEAD^{commit}')"
 tag="$(git rev-parse --verify "v${version}^{commit}")"
 [[ "$head" == "$tag" ]] || {
@@ -35,13 +43,6 @@ log_dir="${XDG_CACHE_HOME:-$HOME/.cache}/omasnitch"
 install -d -m700 "$log_dir"
 touch "$log_dir/install.log"
 chmod 600 "$log_dir/install.log"
-
-if command -v omasnitchctl >/dev/null 2>&1 \
-  && [[ $(omasnitchctl --version 2>/dev/null || true) == "omasnitchctl $service_version" ]] \
-  && omasnitchctl status >/dev/null 2>&1; then
-  echo "OmaSnitch service v$service_version is already running"
-  exit 0
-fi
 
 exec >"$log_dir/install.log" 2>&1
 echo "Installing OmaSnitch service v$service_version from plugin v$version ($head)"
