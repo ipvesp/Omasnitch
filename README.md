@@ -54,7 +54,7 @@ omarchy plugin add https://github.com/ipvesp/Omasnitch.git --enable
 
 The plugin checks whether the matching OmaSnitch service is running. On a new
 installation it verifies that the cloned checkout is clean and that its HEAD
-matches the `v0.2.1` release tag, then builds the daemon from that checkout
+matches the `v0.2.2` release tag, then builds the daemon from that checkout
 with `cargo --locked`. It does not clone or download another application
 revision. Omarchy's polkit agent will ask for permission to install build
 packages, the daemon binary, and the systemd service. The bar shows setup

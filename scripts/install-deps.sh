@@ -4,8 +4,7 @@ set -euo pipefail
 sudo pacman -S --needed \
   rustup \
   clang \
-  llvm \
-  bpftool
+  llvm
 
 rustup toolchain install stable
 

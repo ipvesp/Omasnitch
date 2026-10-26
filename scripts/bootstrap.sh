@@ -38,7 +38,13 @@ mkdir -p "$log_dir"
 exec >"$log_dir/install.log" 2>&1
 echo "Installing OmaSnitch v$version from $head"
 
-pkexec /usr/bin/pacman -S --needed --noconfirm rustup clang llvm bpftool
+packages=()
+command -v rustup >/dev/null 2>&1 || packages+=(rustup)
+command -v clang >/dev/null 2>&1 || packages+=(clang)
+command -v llvm-config >/dev/null 2>&1 || packages+=(llvm)
+if (( ${#packages[@]} > 0 )); then
+  pkexec /usr/bin/pacman -S --needed --noconfirm "${packages[@]}"
+fi
 rustup toolchain install stable
 rustup toolchain install nightly --component rust-src
 
@@ -55,5 +61,12 @@ trap 'rm -rf -- "$build_dir"' EXIT
 CARGO_TARGET_DIR="$build_dir" rustup run stable cargo build --locked --release --package omasnitch
 pkexec /usr/bin/bash "$ROOT/scripts/install-service-root.sh" "$build_dir/release" "$ROOT"
 
+for (( attempt = 0; attempt < 20; attempt++ )); do
+  if omasnitchctl status >/dev/null 2>&1; then
+    echo "OmaSnitch v$version installed"
+    exit 0
+  fi
+  sleep 0.5
+done
 omasnitchctl status
 echo "OmaSnitch v$version installed"
