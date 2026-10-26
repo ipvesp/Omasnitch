@@ -28,7 +28,7 @@ cover the daemon's current in-memory event window and also reset on restart.
 Rules have three manually selected profiles: Home, Work, and Public Wi-Fi.
 They are stored in `/var/lib/omasnitch/rules.json`. A temporary allow can
 last ten minutes or until the daemon restarts. **Allow once** permits the
-next internet connection attempt from the selected running process.
+next connection attempt from the selected running process.
 
 In Settings, **Ask on first internet attempt** is off by default. When
 enabled, a new app's first internet `connect()` attempt is denied and queued
@@ -40,6 +40,16 @@ still be denied before process identification completes.
 
 The IP preview shows applications with matching connection attempts in the
 recent event window. It does not create an IP rule or predict unseen traffic.
+
+The firewall checks IPv4 and IPv6 TCP connects and UDP sends, and drops
+outgoing packets from sockets it has associated with a blocked process. This
+also stops traffic on a connection that was open before a Block rule was
+applied. The rules are process based: a newly started process can make a
+connection during the daemon's process discovery interval (up to roughly
+250 ms), and sockets opened before the daemon attached its hooks may not be
+associated with their process. Raw sockets and traffic outside the daemon's
+cgroup are outside this firewall's scope. Do not rely on OmaSnitch as the
+only network isolation boundary for untrusted processes.
 
 Recent destinations include a reverse DNS (PTR) hostname when one exists.
 This name is not necessarily the domain the application requested. Exact
@@ -64,7 +74,7 @@ The panel's copy button uses `wl-copy`, and desktop notifications use
 
 The plugin checks whether the matching OmaSnitch service is running. On a new
 installation it verifies that the cloned checkout is clean and that its HEAD
-matches the `v0.2.4` release tag, then builds the daemon from that checkout
+matches the `v0.3.0` release tag, then builds the daemon from that checkout
 with `cargo --locked`. It does not clone or download another application
 revision. Omarchy's polkit agent will ask for permission to install build
 packages, the daemon and CLI binaries in `/usr/local/bin`, and the systemd
@@ -116,6 +126,9 @@ refuses to replace an existing plugin directory unless you explicitly set
 omarchy plugin validate .
 /usr/lib/qt6/bin/qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Panel.qml
 cargo build --locked --release --package omasnitch
+# Against an installed 0.3.0 daemon; uses a temporary test-only Block rule:
+python3 tests/firewall_regression.py
+python3 tests/allow_once_regression.py
 ```
 
 Publish only after the code is committed and the SHA in the marketplace

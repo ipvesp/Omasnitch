@@ -37,12 +37,16 @@ use aya::{
         HashMap as BpfHashMap,
         PerCpuHashMap as BpfPerCpuHashMap,
         RingBuf,
+        SockHash,
     },
     programs::{
         CgroupAttachMode,
+        CgroupSock,
         CgroupSockAddr,
         CgroupSkb,
         CgroupSkbAttachType,
+        SkMsg,
+        SockOps,
     },
     Ebpf,
 };
@@ -50,6 +54,7 @@ use aya::{
 use tokio::{
     io::{
         AsyncBufReadExt,
+        AsyncReadExt,
         AsyncWriteExt,
         BufReader,
     },
@@ -57,6 +62,8 @@ use tokio::{
         UnixListener,
         UnixStream,
     },
+    sync::Semaphore,
+    time::timeout,
 };
 
 use omasnitch_common::ConnectEvent;
@@ -99,6 +106,9 @@ const RULES_PATH: &str =
 
 const MAX_EVENTS: usize =
     1000;
+const MAX_PENDING: usize = 1024;
+const MAX_RETIRED_APPS: usize = 4096;
+const MAX_REQUEST_BYTES: u64 = 64 * 1024;
 
 //
 // Artık key process adı değil,
@@ -128,6 +138,8 @@ struct AppState {
 
     once: Mutex<BpfHashMap<aya::maps::MapData, u32, u8>>,
 
+    rule_generation: Mutex<(BpfHashMap<aya::maps::MapData, u32, u32>, u32)>,
+
     pending: RwLock<HashMap<String, PendingConnection>>,
 
     pid_applications: RwLock<HashMap<u32, TrafficIdentity>>,
@@ -145,7 +157,7 @@ struct AppState {
         >,
 
     hostnames: RwLock<HashMap<String, Option<String>>>,
-    dns_sender: mpsc::Sender<String>,
+    dns_sender: mpsc::SyncSender<String>,
 
     //
     // Hangi uygulamaya hangi PID'leri
@@ -234,6 +246,10 @@ fn retire_pid_traffic(state: &Arc<AppState>, pid: u32, identity: TrafficIdentity
         totals
     };
     let mut retired = state.retired_traffic.write().unwrap();
+    if retired.len() >= MAX_RETIRED_APPS
+        && !retired.contains_key(&(identity.application.clone(), identity.uid)) {
+        retired.clear();
+    }
     let total = retired.entry((identity.application, identity.uid)).or_default();
     total.0 = total.0.saturating_add(totals.0);
     total.1 = total.1.saturating_add(totals.1);
@@ -401,7 +417,7 @@ fn remove_application_policy(
 
 fn sync_all_rules(
     state: &Arc<AppState>,
-) {
+) -> Result<()> {
     let mut rules =
         state
             .rules
@@ -410,6 +426,11 @@ fn sync_all_rules(
             .rules
             .clone();
 
+    let has_expired = state.temporary_allows.read().unwrap().values()
+        .any(|deadline| deadline.is_some_and(|end| end <= Instant::now()));
+    if has_expired && let Err(error) = invalidate_socket_exceptions(state) {
+        return Err(error).context("could not expire temporary rules");
+    }
     let expired = {
         let mut temporary = state.temporary_allows.write().unwrap();
         let expired: Vec<String> = temporary.iter()
@@ -420,7 +441,9 @@ fn sync_all_rules(
         expired
     };
     for app in expired {
-        remove_application_policy(state, &app);
+        if !rules.contains_key(&app) {
+            remove_application_policy(state, &app);
+        }
     }
 
     for (
@@ -428,18 +451,34 @@ fn sync_all_rules(
         action,
     ) in rules
     {
-        if let Err(error) =
-            sync_application_policy(
+        sync_application_policy(
                 state,
                 &application,
                 action.to_kernel(),
-            )
-        {
-            eprintln!(
-                "policy sync error for {application}: {error}"
-            );
-        }
+            ).with_context(|| format!("policy sync error for {application}"))?;
     }
+    Ok(())
+}
+
+fn invalidate_socket_exceptions(state: &Arc<AppState>) -> Result<()> {
+    let mut generation = state.rule_generation.lock().unwrap();
+    let next = generation.1.wrapping_add(1);
+    generation.0.insert(0, next, 0)?;
+    generation.1 = next;
+    Ok(())
+}
+
+fn clear_once_for_application(state: &Arc<AppState>, application: &str) {
+    let mut once = state.once.lock().unwrap();
+    for pid in pids_for_application(application) {
+        let _ = once.remove(&pid);
+    }
+}
+
+fn clear_all_once(state: &Arc<AppState>) {
+    let mut once = state.once.lock().unwrap();
+    let pids: Vec<u32> = once.iter().flatten().map(|(pid, _)| pid).collect();
+    for pid in pids { let _ = once.remove(&pid); }
 }
 
 //
@@ -459,9 +498,9 @@ fn spawn_policy_sync(
 ) {
     thread::spawn(
         move || loop {
-            sync_all_rules(
-                &state,
-            );
+            if let Err(error) = sync_all_rules(&state) {
+                eprintln!("policy sync error: {error:#}");
+            }
 
             thread::sleep(
                 Duration::from_millis(
@@ -586,15 +625,16 @@ fn spawn_ring_reader(
                 if raw.verdict == omasnitch_common::VERDICT_ASK
                     && active_rule.as_ref().is_none_or(|action| matches!(action, crate::model::RuleAction::Ask))
                 {
-                    state.pending.write().unwrap().entry(application.clone()).or_insert_with(||
-                        PendingConnection {
+                    let mut pending = state.pending.write().unwrap();
+                    if pending.len() < MAX_PENDING || pending.contains_key(&application) {
+                        pending.entry(application.clone()).or_insert_with(|| PendingConnection {
                             application: application.clone(),
                             pid: raw.pid,
                             destination: event.destination.clone(),
                             uid: raw.uid,
                             timestamp: event.timestamp,
-                        }
-                    );
+                        });
+                    }
                 }
 
                 {
@@ -604,7 +644,7 @@ fn spawn_ring_reader(
                             hostnames.clear();
                         }
                         hostnames.insert(event.destination.clone(), None);
-                        let _ = state.dns_sender.send(event.destination.clone());
+                        let _ = state.dns_sender.try_send(event.destination.clone());
                     }
                 }
 
@@ -654,10 +694,10 @@ fn spawn_dns_resolver(
 
 fn load_rules_into_kernel(
     state: &Arc<AppState>,
-) {
+) -> Result<()> {
     sync_all_rules(
         state,
-    );
+    )
 }
 
 async fn respond(
@@ -670,24 +710,22 @@ async fn respond(
     ) =
         stream.into_split();
 
-    let mut reader =
+    let reader =
         BufReader::new(
             reader,
         );
 
-    let mut line =
-        String::new();
-
-    reader
-        .read_line(
-            &mut line,
-        )
-        .await?;
+    let mut bytes = Vec::new();
+    let mut limited = reader.take(MAX_REQUEST_BYTES + 1);
+    timeout(Duration::from_secs(5), limited.read_until(b'\n', &mut bytes)).await??;
+    if bytes.len() as u64 > MAX_REQUEST_BYTES || bytes.last() != Some(&b'\n') {
+        return send(&mut writer, Response::Error("request too large or incomplete".to_string())).await;
+    }
 
     let request:
         Result<Request, _> =
-        serde_json::from_str(
-            line.trim(),
+        serde_json::from_slice(
+            &bytes,
         );
 
     let response =
@@ -787,16 +825,22 @@ async fn respond(
             }
 
             Ok(Request::SwitchProfile { name }) => {
-                let switched = {
+                clear_all_once(&state);
+                let switched = invalidate_socket_exceptions(&state).and_then(|_| {
                     let mut rules = state.rules.write().unwrap();
-                    rules.switch_profile(name).and_then(|_| rules.save(RULES_PATH))
-                };
+                    let previous = rules.clone();
+                    let result = rules.switch_profile(name).and_then(|_| rules.save(RULES_PATH));
+                    if result.is_err() { *rules = previous; }
+                    result
+                });
                 match switched {
                     Ok(()) => {
                         let tracked: Vec<String> = state.application_pids.read().unwrap().keys().cloned().collect();
                         for app in tracked { remove_application_policy(&state, &app); }
-                        sync_all_rules(&state);
-                        Response::Ok
+                        match sync_all_rules(&state) {
+                            Ok(()) => Response::Ok,
+                            Err(error) => Response::Error(error.to_string()),
+                        }
                     }
                     Err(error) => Response::Error(error.to_string()),
                 }
@@ -823,22 +867,44 @@ async fn respond(
                         },
                         None => Response::Error("pending process is no longer running".to_string()),
                     }
+                } else if let Err(error) = invalidate_socket_exceptions(&state) {
+                    Response::Error(error.to_string())
                 } else {
                     let deadline = seconds.map(|s| Instant::now() + Duration::from_secs(s));
-                    state.temporary_allows.write().unwrap().insert(application.clone(), deadline);
-                    state.pending.write().unwrap().remove(&application);
+                    let previous = state.temporary_allows.write().unwrap().insert(application.clone(), deadline);
                     match sync_application_policy(&state, &application, omasnitch_common::VERDICT_ALLOW) {
-                        Ok(()) => Response::Ok,
-                        Err(error) => Response::Error(error.to_string()),
+                        Ok(()) => {
+                            state.pending.write().unwrap().remove(&application);
+                            Response::Ok
+                        },
+                        Err(error) => {
+                            let mut temporary = state.temporary_allows.write().unwrap();
+                            if let Some(old) = previous { temporary.insert(application.clone(), old); }
+                            else { temporary.remove(&application); }
+                            drop(temporary);
+                            remove_application_policy(&state, &application);
+                            let _ = sync_all_rules(&state);
+                            Response::Error(error.to_string())
+                        },
                     }
                 }
             }
 
             Ok(Request::RevokeTemporary { application }) => {
-                state.temporary_allows.write().unwrap().remove(&application);
-                remove_application_policy(&state, &application);
-                sync_all_rules(&state);
-                Response::Ok
+                clear_once_for_application(&state, &application);
+                match invalidate_socket_exceptions(&state) {
+                    Err(error) => Response::Error(error.to_string()),
+                    Ok(()) => {
+                        state.temporary_allows.write().unwrap().remove(&application);
+                        if !state.rules.read().unwrap().rules.contains_key(&application) {
+                            remove_application_policy(&state, &application);
+                        }
+                        match sync_all_rules(&state) {
+                            Ok(()) => Response::Ok,
+                            Err(error) => Response::Error(error.to_string()),
+                        }
+                    }
+                }
             }
 
             Ok(Request::PreviewIp { address }) => {
@@ -932,12 +998,13 @@ async fn respond(
                     action,
                 },
             ) => {
+                clear_once_for_application(&state, &application);
                 let kernel_result =
-                    sync_application_policy(
+                    invalidate_socket_exceptions(&state).and_then(|_| sync_application_policy(
                         &state,
                         &application,
                         action.to_kernel(),
-                    );
+                    ));
 
                 match kernel_result {
                     Err(error) =>
@@ -947,31 +1014,34 @@ async fn respond(
 
                     Ok(_) => {
                         state.pending.write().unwrap().remove(&application);
-                        let save_result = {
+                        let (save_result, previous_action) = {
                             let mut rules =
                                 state
                                     .rules
                                     .write()
                                     .unwrap();
-
-                            rules.set(
-                                application,
-                                action,
-                            );
-
-                            rules.save(
-                                RULES_PATH,
-                            )
+                            let previous = rules.rules.get(&application).cloned();
+                            rules.set(application.clone(), action);
+                            let result = rules.save(RULES_PATH);
+                            if result.is_err() {
+                                if let Some(old) = previous.clone() { rules.set(application.clone(), old); }
+                                else { rules.remove(&application); }
+                            }
+                            (result, previous)
                         };
 
                         match save_result {
                             Ok(_) =>
                                 Response::Ok,
 
-                            Err(error) =>
-                                Response::Error(
-                                    error.to_string(),
-                                ),
+                            Err(error) => {
+                                if let Some(old) = previous_action {
+                                    let _ = sync_application_policy(&state, &application, old.to_kernel());
+                                } else {
+                                    remove_application_policy(&state, &application);
+                                }
+                                Response::Error(error.to_string())
+                            },
                         }
                     }
                 }
@@ -982,31 +1052,32 @@ async fn respond(
                     application,
                 },
             ) => {
-                state.pending.write().unwrap().remove(&application);
-                remove_application_policy(
-                    &state,
-                    &application,
-                );
-
-                let save_result = {
+                clear_once_for_application(&state, &application);
+                let save_result = invalidate_socket_exceptions(&state).and_then(|_| {
                     let mut rules =
                         state
                             .rules
                             .write()
                             .unwrap();
-
+                    let previous = rules.rules.get(&application).cloned();
                     rules.remove(
                         &application,
                     );
-
-                    rules.save(
+                    let result = rules.save(
                         RULES_PATH,
-                    )
-                };
+                    );
+                    if result.is_err() && let Some(old) = previous {
+                        rules.set(application.clone(), old);
+                    }
+                    result
+                });
 
                 match save_result {
-                    Ok(_) =>
-                        Response::Ok,
+                    Ok(_) => {
+                        state.pending.write().unwrap().remove(&application);
+                        remove_application_policy(&state, &application);
+                        Response::Ok
+                    },
 
                     Err(error) =>
                         Response::Error(
@@ -1039,11 +1110,7 @@ async fn send(
         b'\n',
     );
 
-    writer
-        .write_all(
-            &data,
-        )
-        .await?;
+    timeout(Duration::from_secs(5), writer.write_all(&data)).await??;
 
     Ok(())
 }
@@ -1110,6 +1177,30 @@ async fn main()
             "cannot open /sys/fs/cgroup",
         )?;
 
+    for name in ["track_socket", "release_socket"] {
+        let program: &mut CgroupSock = ebpf.program_mut(name)
+            .with_context(|| format!("{name} program missing"))?.try_into()?;
+        program.load()?;
+        program.attach(&cgroup, CgroupAttachMode::Single)?;
+    }
+
+    {
+        let program: &mut SockOps = ebpf.program_mut("track_tcp")
+            .context("track_tcp program missing")?.try_into()?;
+        program.load()?;
+        program.attach(&cgroup, CgroupAttachMode::Single)?;
+    }
+
+    {
+        let sockets: SockHash<_, u64> = ebpf.map("TCP_SOCKETS")
+            .context("TCP_SOCKETS map missing")?.try_into()?;
+        let map_fd = sockets.fd().try_clone()?;
+        let program: &mut SkMsg = ebpf.program_mut("check_tcp_message")
+            .context("check_tcp_message program missing")?.try_into()?;
+        program.load()?;
+        program.attach(&map_fd)?;
+    }
+
     {
         let program:
             &mut CgroupSockAddr =
@@ -1128,6 +1219,13 @@ async fn main()
             &cgroup,
             CgroupAttachMode::Single,
         )?;
+    }
+
+    for name in ["sendmsg4", "sendmsg6"] {
+        let program: &mut CgroupSockAddr = ebpf.program_mut(name)
+            .with_context(|| format!("{name} program missing"))?.try_into()?;
+        program.load()?;
+        program.attach(&cgroup, CgroupAttachMode::Single)?;
     }
 
     for (name, direction) in [
@@ -1179,6 +1277,10 @@ async fn main()
         ebpf.take_map("ONCE").context("ONCE map missing")?
     )?;
 
+    let rule_generation: BpfHashMap<aya::maps::MapData, u32, u32> = BpfHashMap::try_from(
+        ebpf.take_map("RULE_GENERATION").context("RULE_GENERATION map missing")?
+    )?;
+
     let ring =
         RingBuf::try_from(
             ebpf
@@ -1199,12 +1301,11 @@ async fn main()
             PathBuf::from(
                 RULES_PATH,
             ),
-        )
-        .unwrap_or_default();
+        )?;
 
     if let Some(uid) = rules.prompt_uid { prompt_uid.insert(0, uid, 0)?; }
 
-    let (dns_sender, dns_receiver) = mpsc::channel();
+    let (dns_sender, dns_receiver) = mpsc::sync_channel(256);
 
     let state =
         Arc::new(
@@ -1219,6 +1320,8 @@ async fn main()
                 prompt_uid: Mutex::new(prompt_uid),
 
                 once: Mutex::new(once),
+
+                rule_generation: Mutex::new((rule_generation, 0)),
 
                 pending: RwLock::new(HashMap::new()),
 
@@ -1250,7 +1353,7 @@ async fn main()
 
     load_rules_into_kernel(
         &state,
-    );
+    )?;
 
     spawn_ring_reader(
         ring,
@@ -1275,6 +1378,8 @@ async fn main()
         "OmaSnitch daemon running",
     );
 
+    let client_slots = Arc::new(Semaphore::new(64));
+
     loop {
         tokio::select! {
             result =
@@ -1285,11 +1390,16 @@ async fn main()
                     _,
                 ) = result?;
 
+                let Ok(permit) = client_slots.clone().try_acquire_owned() else {
+                    continue;
+                };
+
                 let state =
                     state.clone();
 
                 tokio::spawn(
                     async move {
+                        let _permit = permit;
                         if let Err(error) =
                             respond(
                                 stream,
